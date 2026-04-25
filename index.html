@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>South India Amateur Radio Repeaters — TN · KL · KA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  :root, [data-theme="dark"] {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #1f2630;
+    --ink: #e6edf3; --ink-dim: #8b949e;
+    --accent: #ff6b35; --accent-2: #f7c948;
+    --on-air: #2ea043; --off-air: #da3633; --unknown: #6e7681;
+    --border: #30363d; --user-loc: #58a6ff;
+    --tn: #ff6b35; --kl: #2ea043; --ka: #58a6ff;
+  }
+  [data-theme="light"] {
+    --bg: #faf9f6; --panel: #ffffff; --panel-2: #f1ede4;
+    --ink: #1a1a1a; --ink-dim: #6b6b6b;
+    --accent: #c63d1f; --accent-2: #b8860b;
+    --on-air: #1a7f37; --off-air: #b91c1c; --unknown: #8a8a8a;
+    --border: #d8d4ca; --user-loc: #1f6feb;
+    --tn: #c63d1f; --kl: #1a7f37; --ka: #1f6feb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg); color: var(--ink);
+    overflow: hidden; transition: background 0.3s, color 0.3s;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "header header" "sidebar map";
+    height: 100vh;
+  }
+  header {
+    grid-area: header; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  }
+  header h1 {
+    font-family: 'Fraunces', serif; font-weight: 800;
+    font-size: 22px; letter-spacing: -0.02em;
+  }
+  header h1 span { color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+  .meta { font-size: 11px; color: var(--ink-dim); text-align: right; line-height: 1.5; }
+  .meta strong { color: var(--accent-2); }
+  .icon-btn {
+    background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--ink); width: 38px; height: 38px;
+    border-radius: 8px; cursor: pointer; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  aside {
+    grid-area: sidebar; background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 18px;
+  }
+  .legend, .filter-group, .repeater-list { margin-bottom: 18px; }
+  .legend {
+    display: grid; gap: 8px; padding: 14px;
+    background: var(--panel-2); border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .legend h3, .filter-group h3, .repeater-list h3 {
+    font-family: 'Fraunces', serif; font-size: 13px;
+    color: var(--ink-dim); text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 8px;
+  }
+  .legend-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .dot.on { background: var(--on-air); color: var(--on-air); }
+  .dot.off { background: var(--off-air); color: var(--off-air); }
+  .dot.user { background: var(--user-loc); color: var(--user-loc); }
+  .dot.tn { background: var(--tn); color: var(--tn); }
+  .dot.kl { background: var(--kl); color: var(--kl); }
+  .dot.ka { background: var(--ka); color: var(--ka); }
+  .filter-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-btn {
+    background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--border); padding: 6px 12px;
+    font-family: inherit; font-size: 11px; border-radius: 4px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .filter-btn:hover { border-color: var(--accent); }
+  .filter-btn.active {
+    background: var(--accent); color: #fff;
+    border-color: var(--accent); font-weight: 700;
+  }
+  .locate-btn {
+    width: 100%; background: var(--user-loc); color: #fff;
+    border: none; padding: 10px; font-family: inherit;
+    font-size: 12px; font-weight: 700; border-radius: 6px;
+    cursor: pointer; margin-bottom: 10px;
+    transition: opacity 0.15s; letter-spacing: 0.05em;
+  }
+  .locate-btn:hover { opacity: 0.85; }
+  .locate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .locate-status {
+    font-size: 10px; color: var(--ink-dim);
+    margin-bottom: 18px; padding: 0 4px; line-height: 1.5;
+  }
+  .repeater-card {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-left: 3px solid var(--unknown); border-radius: 6px;
+    padding: 12px; margin-bottom: 8px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .repeater-card:hover { border-color: var(--accent); transform: translateX(2px); }
+  .repeater-card.on { border-left-color: var(--on-air); }
+  .repeater-card.off { border-left-color: var(--off-air); }
+  .rc-head {
+    display: flex; justify-content: space-between;
+    align-items: baseline; margin-bottom: 4px;
+  }
+  .callsign { font-weight: 700; color: var(--accent-2); font-size: 14px; }
+  .freq { font-size: 13px; color: var(--ink); }
+  .rc-loc { font-size: 11px; color: var(--ink-dim); margin-bottom: 4px; }
+  .rc-club { font-size: 10px; color: var(--ink-dim); font-style: italic; }
+  .rc-distance {
+    font-size: 10px; color: var(--user-loc);
+    font-weight: 700; margin-top: 4px;
+  }
+  .state-tag {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    padding: 1px 6px; border-radius: 3px; margin-right: 6px;
+    letter-spacing: 0.1em;
+  }
+  .state-tag.tn { background: var(--tn); color: #fff; }
+  .state-tag.kl { background: var(--kl); color: #fff; }
+  .state-tag.ka { background: var(--ka); color: #fff; }
+  main { grid-area: map; position: relative; }
+  #map { width: 100%; height: 100%; background: var(--bg); }
+  .leaflet-popup-content-wrapper {
+    background: var(--panel); color: var(--ink);
+    border-radius: 6px; border: 1px solid var(--border);
+  }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-content {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    margin: 12px 14px; line-height: 1.6;
+  }
+  .leaflet-popup-content .pop-call {
+    font-family: 'Fraunces', serif; font-size: 18px;
+    font-weight: 800; color: var(--accent);
+    display: block; margin-bottom: 6px;
+  }
+  .pop-status {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 3px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 8px; margin-right: 4px;
+  }
+  .pop-status.on { background: var(--on-air); color: #fff; }
+  .pop-status.off { background: var(--off-air); color: #fff; }
+  .pop-row {
+    display: grid; grid-template-columns: 80px 1fr;
+    gap: 8px; padding: 2px 0;
+  }
+  .pop-row span:first-child { color: var(--ink-dim); }
+  .disclaimer {
+    margin-top: 16px; padding: 12px;
+    background: rgba(247, 201, 72, 0.1);
+    border: 1px solid rgba(247, 201, 72, 0.35);
+    border-radius: 6px; font-size: 10px;
+    color: var(--ink-dim); line-height: 1.6;
+  }
+  .disclaimer strong { color: var(--accent-2); }
+  .leaflet-container { font-family: 'JetBrains Mono', monospace; }
+  .user-marker {
+    width: 18px; height: 18px;
+    background: var(--user-loc); border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(31,111,235,0.3);
+    position: relative;
+  }
+  .user-marker::after {
+    content: ''; position: absolute; top: -3px; left: -3px;
+    width: 18px; height: 18px;
+    border: 3px solid var(--user-loc); border-radius: 50%;
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(3); opacity: 0; }
+  }
+  aside::-webkit-scrollbar { width: 6px; }
+  aside::-webkit-scrollbar-track { background: var(--panel); }
+  aside::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  aside::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+  @media (max-width: 768px) {
+    .app {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 45vh 55vh;
+      grid-template-areas: "header" "map" "sidebar";
+    }
+    aside { border-right: none; border-top: 1px solid var(--border); }
+    header h1 { font-size: 15px; }
+    .meta { display: none; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+<div class="app">
+  <header>
+    <h1>VU2JSM<span>·</span>SOUTH INDIA <span>·</span> Repeater Map</h1>
+    <div class="header-right">
+      <div class="meta">
+        Source: <strong>VU2JOS / NIAR</strong> · Updated 16 Feb 2026<br>
+        <span id="counter">— repeaters loaded</span>
+      </div>
+      <button class="icon-btn" id="theme-toggle" title="Toggle dark/light">🌙</button>
+    </div>
+  </header>
+  <aside>
+    <button class="locate-btn" id="locate-btn">📍 Find My Location</button>
+    <div class="locate-status" id="locate-status">Click to centre the map on your location and sort repeaters by distance.</div>
+
+    <div class="legend">
+      <h3>Legend</h3>
+      <div class="legend-row"><div class="dot on"></div> On air / Active</div>
+      <div class="legend-row"><div class="dot off"></div> Off air / Inactive</div>
+      <div class="legend-row"><div class="dot user"></div> Your location</div>
+    </div>
+
+    <div class="filter-group">
+      <h3>Filter by state</h3>
+      <div class="filter-btns" id="state-filter">
+        <button class="filter-btn active" data-state="all">All</button>
+        <button class="filter-btn" data-state="TN">Tamil Nadu</button>
+        <button class="filter-btn" data-state="KL">Kerala</button>
+        <button class="filter-btn" data-state="KA">Karnataka</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <h3>Filter by status</h3>
+      <div class="filter-btns" id="status-filter">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="on">On Air</button>
+        <button class="filter-btn" data-filter="off">Off Air</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <h3>Filter by band</h3>
+      <div class="filter-btns" id="band-filter">
+        <button class="filter-btn active" data-band="all">All</button>
+        <button class="filter-btn" data-band="VHF">VHF (2m)</button>
+        <button class="filter-btn" data-band="UHF">UHF (70cm)</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <h3>Filter by mode</h3>
+      <div class="filter-btns" id="mode-filter">
+        <button class="filter-btn active" data-mode="all">All</button>
+        <button class="filter-btn" data-mode="Analogue">Analogue FM</button>
+        <button class="filter-btn" data-mode="DMR">DMR</button>
+      </div>
+    </div>
+
+    <div class="repeater-list">
+      <h3 id="list-heading">Repeaters</h3>
+      <div id="cards"></div>
+    </div>
+
+    <div class="disclaimer">
+      <strong>Note on accuracy:</strong> Pins use landmark-level approximate coordinates derived from published location names (e.g. "Mount Road", "Nandi Hills"). Exact tower coordinates are not in the public source data. Verify with the listed club before operating. Status reflects the database listing, not real-time RF activity.<br><br>
+      <strong>On DMR:</strong> Only repeaters explicitly identified as DMR in the VU2JOS source are tagged DMR (currently 2 — both in Chennai). Other DMR repeaters likely exist in India but are not in this public source. RepeaterBook has a more comprehensive DMR list.
+    </div>
+  </aside>
+  <main><div id="map"></div></main>
+</div>
+
+<script>
+  // Source: VU2JOS / NIAR Hyderabad master list (qsl.net/vu2jos/Repeaters.htm), updated 16 Feb 2026.
+  // Coordinates approximated to published landmark or district centre.
+  const repeaters = [
+    // ============== TAMIL NADU — ACTIVE VHF ==============
+    { state:'TN', callsign:'VU2LHS', freq_tx:'145.550', freq_rx:'144.950', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chennai', location:'Opp. High Court, Parrys Corner', club:'Vandu Net Amateur Radio Club', status:'on', lat:13.0930, lng:80.2880 },
+    { state:'TN', callsign:'VU2MRR', freq_tx:'145.775', freq_rx:'145.175', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chennai', location:'Residency Hotel, T. Nagar', club:'Madras Repeater Club', status:'on', lat:13.0418, lng:80.2341 },
+    { state:'TN', callsign:'VU2PUM', freq_tx:'145.600', freq_rx:'145.000', shift:'−600 kHz', band:'VHF', mode:'DMR', district:'Chennai', location:'Chennai (site not published)', club:'DMR SMARTS', status:'on', lat:13.0827, lng:80.2707 },
+    { state:'TN', callsign:'VU2RPT', freq_tx:'145.800', freq_rx:'145.200', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Coimbatore', location:'Clock Tower, Avanashi Road', club:'Coimbatore Amateur Radio Club', status:'on', lat:11.0168, lng:76.9558 },
+    { state:'TN', callsign:'VU2KOD', freq_tx:'145.150', freq_rx:'144.550', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Dindigul', location:'Kodaikanal', club:'Repeater Society of Kodai', status:'on', lat:10.2381, lng:77.4892 },
+    { state:'TN', callsign:'VU2UDT', freq_tx:'144.900', freq_rx:'144.300', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Dindigul', location:'Vadakaunji, Palani-Kodaikanal Road', club:'Udumalpet VHF Repeater Club', status:'on', lat:10.5867, lng:77.2469 },
+    { state:'TN', callsign:'VU2EOD', freq_tx:'145.375', freq_rx:'144.775', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Erode', location:'Erode', club:'Erode Amateur Radio Club', status:'on', lat:11.3410, lng:77.7172 },
+    { state:'TN', callsign:'VU2LEU', freq_tx:'145.850', freq_rx:'145.250', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kanyakumari', location:'Tovalai', club:'ART Southern Repeater', status:'on', lat:8.2667, lng:77.5500 },
+    { state:'TN', callsign:'VU2TCD', freq_tx:'145.125', freq_rx:'145.725', shift:'+600 kHz', band:'VHF', mode:'Analogue', district:'Namakkal', location:'Tiruchengode', club:'Tiruchengodu Repeater Club', status:'on', lat:11.3805, lng:77.8939 },
+    { state:'TN', callsign:'VU2CPI', freq_tx:'145.850', freq_rx:'145.250', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Salem', location:'Yercaud', club:'Sadhuragiri Repeater Society', status:'on', lat:11.7748, lng:78.2069 },
+    // ============== TAMIL NADU — ACTIVE UHF ==============
+    { state:'TN', callsign:'VU2MWG', freq_tx:'435.800', freq_rx:'434.100', shift:'−1.6 MHz', band:'UHF', mode:'DMR', district:'Chennai', location:'Mount Road', club:'DMR', status:'on', lat:13.0604, lng:80.2640 },
+    { state:'TN', callsign:'VU2POC', freq_tx:'434.950', freq_rx:'436.550', shift:'+1.6 MHz', band:'UHF', mode:'Analogue', district:'Salem', location:'Yercaud', club:'Tiruchengodu UHF Disaster Repeater', status:'on', lat:11.7748, lng:78.2069 },
+    // ============== TAMIL NADU — INACTIVE ==============
+    { state:'TN', callsign:'VU2XIS', freq_tx:'145.375', freq_rx:'144.775', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chennai', location:'Tirutani area', club:'Marconi Amateur Radio Club, Tirutani', status:'off', lat:13.1800, lng:79.6100 },
+    { state:'TN', callsign:'VU3MVR', freq_tx:'145.675', freq_rx:'145.075', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chennai', location:'AVM Studio, Kodambakkam', club:'Madras VHF Club', status:'off', lat:13.0510, lng:80.2210 },
+    { state:'TN', callsign:'VU3VGC', freq_tx:'145.575', freq_rx:'144.975', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chennai', location:'Chennai (specific site not published)', club:'VU3VHF (Abandoned)', status:'off', lat:13.0950, lng:80.2900 },
+    { state:'TN', callsign:'VU2AOT', freq_tx:'145.750', freq_rx:'145.150', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Coimbatore', location:'Coimbatore', club:'Southern Amateur Radio Society', status:'off', lat:11.0168, lng:76.9558 },
+    { state:'TN', callsign:'VU2DND', freq_tx:'144.930', freq_rx:'145.530', shift:'+600 kHz', band:'VHF', mode:'Analogue', district:'Coimbatore', location:'Kavarakal', club:'Pollachi Amateur Radio Repeater Club', status:'off', lat:10.6588, lng:77.0085 },
+    { state:'TN', callsign:'VU2IDR', freq_tx:'—', freq_rx:'—', shift:'—', band:'VHF', mode:'Analogue', district:'Kumbakonam', location:'Kumbakonam', club:'Abandoned', status:'off', lat:10.9601, lng:79.3845 },
+    { state:'TN', callsign:'VU2IRT', freq_tx:'144.975', freq_rx:'144.375', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Nilgiris', location:'Doddabetta', club:'Annamalai Amateur Radio Club (Ooty)', status:'off', lat:11.4007, lng:76.7382 },
+    { state:'TN', callsign:'VU2ECS', freq_tx:'145.550', freq_rx:'144.950', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Ramanathapuram', location:'Kilakarai', club:'Abandoned', status:'off', lat:9.2333, lng:78.7833 },
+    { state:'TN', callsign:'VU2YCD', freq_tx:'145.550', freq_rx:'144.950', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Salem', location:'Yercaud', club:'Repeater Club of Yercaud', status:'off', lat:11.7748, lng:78.2069 },
+    { state:'TN', callsign:'VU2TJR', freq_tx:'145.850', freq_rx:'145.250', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Thanjavur', location:'Thanjavur', club:'Centre for Ecology & Research (Abandoned)', status:'off', lat:10.7870, lng:79.1378 },
+    { state:'TN', callsign:'VU2KJO', freq_tx:'145.675', freq_rx:'145.075', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Thoothukudi', location:'Thoothukudi', club:'Pearl City Repeater Society (Abandoned)', status:'off', lat:8.7642, lng:78.1348 },
+    { state:'TN', callsign:'VU2RYM', freq_tx:'145.600', freq_rx:'145.000', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Virudhunagar', location:'Sanjeevi Hills', club:'Disaster Communication Repeater Club, Rajapalayam', status:'off', lat:9.4533, lng:77.5544 },
+    { state:'TN', callsign:'VU2VCM', freq_tx:'145.475', freq_rx:'144.875', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Vellore', location:'Yelagiri', club:'Vital Communication Club (Swami Malai)', status:'off', lat:12.5833, lng:78.6333 },
+
+    // ============== KERALA — ACTIVE VHF ==============
+    { state:'KL', callsign:'VU2FAR', freq_tx:'145.175', freq_rx:'145.775', shift:'+600 kHz', band:'VHF', mode:'Analogue', district:'Idukki', location:'Calvary Mount', club:'Idukki VHF Repeater (mem. K. Thampi Abraham)', status:'on', lat:9.8500, lng:76.9700 },
+    { state:'KL', callsign:'VU2HEN', freq_tx:'145.100', freq_rx:'145.700', shift:'+600 kHz', band:'VHF', mode:'Analogue', district:'Idukki', location:'Kattapana', club:'Hams Emergency Comms. Society', status:'on', lat:9.7450, lng:77.1167 },
+    { state:'KL', callsign:'VU2CHN', freq_tx:'145.600', freq_rx:'145.000', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Idukki', location:'Nadukani', club:'Institute of Amateur Radio in Kerala, Kochi', status:'on', lat:10.0167, lng:76.8333 },
+    { state:'KL', callsign:'VU2WSV', freq_tx:'145.550', freq_rx:'144.950', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Idukki', location:'Thrishanku, Kuttikanam', club:'Society for Promotion of Amateur Radio & Emergency Services, Alappuzha', status:'on', lat:9.5667, lng:76.9833 },
+    { state:'KL', callsign:'VU2MWW', freq_tx:'145.675', freq_rx:'145.075', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kannur', location:'Ramanthall, Ezhimala', club:'Malabar Repeater Club', status:'on', lat:12.0167, lng:75.2167 },
+    { state:'KL', callsign:'VU2CSD', freq_tx:'145.350', freq_rx:'144.750', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kollam', location:'Jerome Institute, Fatima Matha College', club:'CSD Repeater Club', status:'on', lat:8.8932, lng:76.6141 },
+    { state:'KL', callsign:'VU2GCC', freq_tx:'145.200', freq_rx:'144.600', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kollam', location:'Thenmala', club:'Indian Amateur Radio Contesting Consortium', status:'on', lat:8.9667, lng:77.0667 },
+    { state:'KL', callsign:'VU2IP', freq_tx:'145.265', freq_rx:'144.665', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kottayam', location:'Ilaveezhapoonchira, Melukavu', club:'Pala Amateur Radio League & Emergency Comm. Network', status:'on', lat:9.7833, lng:76.7333 },
+    { state:'KL', callsign:'VU2TTD', freq_tx:'145.300', freq_rx:'144.700', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kottayam', location:'Ilaveezhapoonchira, Melukavu', club:'Thodupuzha Repeater Society', status:'on', lat:9.7833, lng:76.7333 },
+    { state:'KL', callsign:'VU2CSR', freq_tx:'145.625', freq_rx:'145.025', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kozhikode', location:'Medical College', club:'Calicut Repeater Society', status:'on', lat:11.2588, lng:75.7804 },
+    { state:'KL', callsign:'VU2EDJ', freq_tx:'145.825', freq_rx:'145.225', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Kozhikode', location:'Payamkuttimala', club:'Vatakara Amateur Radio Repeater Club', status:'on', lat:11.6068, lng:75.5916 },
+    { state:'KL', callsign:'VU2MJJ', freq_tx:'145.325', freq_rx:'144.725', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Malappuram', location:'Thiruvonammala (Oorakam Mala)', club:'Malabar Amateur Radio Repeater Society, Tirur', status:'on', lat:11.0667, lng:75.9167 },
+    { state:'KL', callsign:'VU2BCM', freq_tx:'145.650', freq_rx:'145.050', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Palakkad', location:'Nelliampathy', club:'Repeater Society of Palakkad', status:'on', lat:10.5333, lng:76.6833 },
+    { state:'KL', callsign:'VU2IAC', freq_tx:'144.825', freq_rx:'144.225', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Thrissur', location:'Higher Secondary School, Poomala', club:'Indian Amateur Radio Contesting Consortium', status:'on', lat:10.5276, lng:76.2144 },
+    { state:'KL', callsign:'VU2XT', freq_tx:'145.600', freq_rx:'145.000', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Thiruvananthapuram', location:'Technopark', club:'Trivandrum Amateur Radio Society', status:'on', lat:8.5566, lng:76.8800 },
+    { state:'KL', callsign:'VU2YSR', freq_tx:'145.225', freq_rx:'144.625', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Thiruvananthapuram', location:'Kerala State S&T Museum, PMG Jn.', club:'Radio Society of Ananthapuri', status:'on', lat:8.5074, lng:76.9530 },
+    { state:'KL', callsign:'VU2RFF', freq_tx:'144.145', freq_rx:'144.745', shift:'+600 kHz', band:'VHF', mode:'Analogue', district:'Wayanad', location:'Phantom Rock, Ambalavayal', club:'Sultan Bathery DX Association', status:'on', lat:11.6167, lng:76.2167 },
+    // ============== KERALA — ACTIVE VHF (Pathanamthitta off-air per source) ==============
+    { state:'KL', callsign:'VU2DFD', freq_tx:'144.475', freq_rx:'145.075', shift:'+600 kHz', band:'VHF', mode:'Analogue', district:'Pathanamthitta', location:'Mount Zion College, Kadammanitta', club:'District Amateur Radio Society (Off air)', status:'off', lat:9.2667, lng:76.7833 },
+    // ============== KERALA — INACTIVE ==============
+    { state:'KL', callsign:'VU2MEP', freq_tx:'144.800', freq_rx:'144.200', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Ernakulam', location:'Thrikkakkara', club:'Model Engg College', status:'off', lat:10.0290, lng:76.3460 },
+
+    // ============== KARNATAKA — ACTIVE VHF ==============
+    { state:'KA', callsign:'VU2IU', freq_tx:'145.800', freq_rx:'145.200', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Bengaluru', location:'46th Floor, Mantri Pinnacle, Bannerghatta Road', club:'Indian Amateur Radio Repeater Foundation', status:'on', lat:12.8929, lng:77.5982 },
+    { state:'KA', callsign:'VU2TWO', freq_tx:'145.650', freq_rx:'145.050', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Bengaluru', location:'Public Utility Building, M.G. Road', club:'Repeater Society of Bangalore', status:'on', lat:12.9750, lng:77.6080 },
+    { state:'KA', callsign:'VU2ZO', freq_tx:'145.275', freq_rx:'144.675', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Bengaluru', location:'21st Floor, U.B. City, CBD', club:'Indian Institute of Hams', status:'on', lat:12.9716, lng:77.5946 },
+    { state:'KA', callsign:'VU2RSB', freq_tx:'145.700', freq_rx:'145.100', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chikkaballapur', location:'Nandi Hills', club:'Repeater Society of Bangalore', status:'on', lat:13.3702, lng:77.6835 },
+    { state:'KA', callsign:'VU2CHQ', freq_tx:'144.900', freq_rx:'144.300', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Chikmagalur', location:'Mullayyangiri Hills', club:'Chikmagalur Amateur Radio Society', status:'on', lat:13.3917, lng:75.7167 },
+    { state:'KA', callsign:'VU2NIW', freq_tx:'145.425', freq_rx:'144.825', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Mangaluru', location:'Lady Hill', club:'NITK Mangalore Amateur Radio Club', status:'on', lat:12.8765, lng:74.8430 },
+    { state:'KA', callsign:'VU2TRE', freq_tx:'145.725', freq_rx:'145.125', shift:'−600 kHz', band:'VHF', mode:'Analogue', district:'Mysuru', location:'Chamundi Hills', club:'Repeater Society of Mysore', status:'on', lat:12.2725, lng:76.6731 },
+    // ============== KARNATAKA — ACTIVE UHF ==============
+    { state:'KA', callsign:'VU2ZOI', freq_tx:'434.050', freq_rx:'437.650', shift:'+1.6 MHz', band:'UHF', mode:'Analogue', district:'Bengaluru', location:'Cubbon Road, M. Chinnaswamy Stadium', club:'Indian Institute of Hams', status:'on', lat:12.9787, lng:77.5996 },
+    { state:'KA', callsign:'VU2RQB', freq_tx:'435.200', freq_rx:'437.200', shift:'+1.6 MHz', band:'UHF', mode:'Analogue', district:'Bengaluru', location:'M.G. Road (Public Utility Building)', club:'Repeater Society of Bangalore', status:'on', lat:12.9750, lng:77.6080 },
+    { state:'KA', callsign:'VU2CIQ', freq_tx:'434.050', freq_rx:'435.650', shift:'+1.6 MHz', band:'UHF', mode:'Analogue', district:'Chikmagalur', location:'Chikmagalur City', club:'Chikmagalur Amateur Radio Society', status:'on', lat:13.3161, lng:75.7720 }
+  ];
+
+  const stateNames = { TN: 'Tamil Nadu', KL: 'Kerala', KA: 'Karnataka' };
+
+  // Map setup
+  const map = L.map('map', { zoomControl: true }).setView([11.5, 77.5], 7);
+
+  const tileLayers = {
+    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd', maxZoom: 19
+    }),
+    light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd', maxZoom: 19
+    })
+  };
+  let currentTheme = 'dark';
+  tileLayers.dark.addTo(map);
+
+  function makeIcon(status) {
+    const c = status === 'on' ? '#2ea043' : status === 'off' ? '#da3633' : '#6e7681';
+    return L.divIcon({
+      className: 'rep-marker',
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 0 0 1px ${c}, 0 0 10px ${c};"></div>`,
+      iconSize: [20, 20], iconAnchor: [10, 10]
+    });
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  const markers = [];
+  const cardsEl = document.getElementById('cards');
+  let userLocation = null;
+
+  function buildPopup(r) {
+    const dmrBadge = r.mode === 'DMR' ? '<span class="pop-status" style="background:#7e57c2;color:#fff;">DMR</span>' : '';
+    return `
+      <span class="pop-call">${r.callsign}</span>
+      <span class="pop-status ${r.status}">${r.status === 'on' ? 'On Air' : 'Off Air'}</span>
+      <span class="state-tag ${r.state.toLowerCase()}">${r.state}</span>
+      ${dmrBadge}
+      <div class="pop-row"><span>Band</span><span>${r.band}</span></div>
+      <div class="pop-row"><span>Mode</span><span>${r.mode}</span></div>
+      <div class="pop-row"><span>You hear</span><span>${r.freq_tx} MHz</span></div>
+      <div class="pop-row"><span>You send</span><span>${r.freq_rx} MHz</span></div>
+      <div class="pop-row"><span>Shift</span><span>${r.shift}</span></div>
+      <div class="pop-row"><span>District</span><span>${r.district}</span></div>
+      <div class="pop-row"><span>Location</span><span>${r.location}</span></div>
+      <div class="pop-row"><span>Club</span><span>${r.club}</span></div>
+    `;
+  }
+
+  repeaters.forEach((r, i) => {
+    const marker = L.marker([r.lat, r.lng], { icon: makeIcon(r.status) }).addTo(map);
+    marker.bindPopup(buildPopup(r));
+    markers.push({ marker, data: r, idx: i });
+  });
+
+  function renderCards(sortByDistance = false) {
+    cardsEl.innerHTML = '';
+    let list = [...repeaters.map((r, i) => ({...r, idx: i}))];
+    if (sortByDistance && userLocation) {
+      list.forEach(r => r.distance = haversine(userLocation.lat, userLocation.lng, r.lat, r.lng));
+      list.sort((a, b) => a.distance - b.distance);
+      document.getElementById('list-heading').textContent = 'Repeaters (nearest first)';
+    } else {
+      document.getElementById('list-heading').textContent = 'Repeaters';
+    }
+    list.forEach(r => {
+      const card = document.createElement('div');
+      card.className = `repeater-card ${r.status}`;
+      card.dataset.idx = r.idx;
+      card.dataset.state = r.state;
+      card.dataset.status = r.status;
+      card.dataset.band = r.band;
+      card.dataset.mode = r.mode;
+      const dmrTag = r.mode === 'DMR' ? '<span class="state-tag" style="background:#7e57c2;color:#fff;">DMR</span>' : '';
+      card.innerHTML = `
+        <div class="rc-head">
+          <span class="callsign"><span class="state-tag ${r.state.toLowerCase()}">${r.state}</span>${dmrTag}${r.callsign}</span>
+          <span class="freq">${r.freq_tx} MHz</span>
+        </div>
+        <div class="rc-loc">${r.district} · ${r.location} · ${r.band}</div>
+        <div class="rc-club">${r.club}</div>
+        ${r.distance != null ? `<div class="rc-distance">↗ ${r.distance.toFixed(1)} km from you</div>` : ''}
+      `;
+      card.addEventListener('click', () => {
+        map.flyTo([r.lat, r.lng], 12, { duration: 0.8 });
+        markers[r.idx].marker.openPopup();
+      });
+      cardsEl.appendChild(card);
+    });
+    applyFilters();
+  }
+
+  document.getElementById('counter').textContent = `${repeaters.length} repeaters loaded`;
+
+  // ===== Filter state (MUST be declared before renderCards/applyFilters runs) =====
+  let stateFilter = 'all';
+  let statusFilter = 'all';
+  let bandFilter = 'all';
+  let modeFilter = 'all';
+
+  renderCards();
+
+  function applyFilters() {
+    markers.forEach(({ marker, data }) => {
+      const ok =
+        (stateFilter === 'all' || data.state === stateFilter) &&
+        (statusFilter === 'all' || data.status === statusFilter) &&
+        (bandFilter === 'all' || data.band === bandFilter) &&
+        (modeFilter === 'all' || data.mode === modeFilter);
+      if (ok) {
+        if (!map.hasLayer(marker)) marker.addTo(map);
+      } else {
+        if (map.hasLayer(marker)) map.removeLayer(marker);
+      }
+    });
+    document.querySelectorAll('.repeater-card').forEach(card => {
+      const ok =
+        (stateFilter === 'all' || card.dataset.state === stateFilter) &&
+        (statusFilter === 'all' || card.dataset.status === statusFilter) &&
+        (bandFilter === 'all' || card.dataset.band === bandFilter) &&
+        (modeFilter === 'all' || card.dataset.mode === modeFilter);
+      card.style.display = ok ? '' : 'none';
+    });
+  }
+
+  function bindFilterGroup(selector, key, setter) {
+    document.querySelectorAll(`${selector} .filter-btn`).forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll(`${selector} .filter-btn`).forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        setter(btn.dataset[key]);
+        applyFilters();
+      });
+    });
+  }
+  bindFilterGroup('#state-filter', 'state', v => stateFilter = v);
+  bindFilterGroup('#status-filter', 'filter', v => statusFilter = v);
+  bindFilterGroup('#band-filter', 'band', v => bandFilter = v);
+  bindFilterGroup('#mode-filter', 'mode', v => modeFilter = v);
+
+  // ===== Geolocation =====
+  let userMarker = null;
+  const locateBtn = document.getElementById('locate-btn');
+  const locateStatus = document.getElementById('locate-status');
+
+  function setLocation(lat, lng, accuracy, source) {
+    userLocation = { lat, lng };
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([lat, lng], {
+      icon: L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [18,18], iconAnchor: [9,9] }),
+      zIndexOffset: 1000
+    }).addTo(map).bindPopup(`<b>You are here</b><br>Source: ${source}${accuracy ? `<br>Accuracy: ±${Math.round(accuracy)} m` : ''}`);
+    map.flyTo([lat, lng], 10, { duration: 1.2 });
+    const nearest = [...repeaters].map(r => ({...r, d: haversine(lat, lng, r.lat, r.lng)})).sort((a,b)=>a.d-b.d)[0];
+    locateStatus.innerHTML = `📍 Located via <strong>${source}</strong>${accuracy ? ` (±${Math.round(accuracy)} m)` : ''}. Nearest: <strong>${nearest.callsign}</strong> at ${nearest.d.toFixed(1)} km.`;
+    locateBtn.textContent = '🔄 Update Location';
+    locateBtn.disabled = false;
+    renderCards(true);
+  }
+
+  async function tryIPFallback() {
+    locateStatus.textContent = '⌛ Trying IP-based location (less accurate)...';
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      if (!res.ok) throw new Error('IP service returned ' + res.status);
+      const data = await res.json();
+      if (data.latitude && data.longitude) {
+        setLocation(data.latitude, data.longitude, null, `IP geolocation (${data.city || 'unknown city'})`);
+        return true;
+      }
+      throw new Error('No coordinates in IP response');
+    } catch (e) {
+      locateStatus.innerHTML = `⚠ IP fallback also failed: ${e.message}.<br>Try opening this page over https:// or use a manual coordinate (see console).`;
+      locateBtn.textContent = '📍 Find My Location';
+      locateBtn.disabled = false;
+      return false;
+    }
+  }
+
+  locateBtn.addEventListener('click', () => {
+    locateBtn.disabled = true;
+    locateBtn.textContent = '⌛ Locating...';
+
+    // Diagnostic info up-front
+    const isSecure = window.isSecureContext;
+    const protocol = window.location.protocol;
+    console.log('[Locate] Protocol:', protocol, '| Secure context:', isSecure);
+
+    if (!navigator.geolocation) {
+      locateStatus.innerHTML = '⚠ Browser does not expose Geolocation API.<br>Trying IP fallback...';
+      tryIPFallback();
+      return;
+    }
+
+    if (!isSecure && protocol !== 'file:') {
+      locateStatus.innerHTML = `⚠ Page is not in a secure context (${protocol}). Browser may block GPS.<br>Trying anyway...`;
+    } else if (protocol === 'file:') {
+      locateStatus.innerHTML = `⚠ Page opened as <code>file://</code>. Most browsers block GPS here.<br>Trying anyway, will fall back to IP location...`;
+    } else {
+      locateStatus.textContent = 'Requesting permission... (check for browser prompt)';
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setLocation(latitude, longitude, accuracy, 'GPS / browser');
+      },
+      (err) => {
+        const msgs = {
+          1: 'Permission denied. Check the address bar for a blocked-location icon, or browser site settings.',
+          2: 'Position unavailable. Your device could not determine GPS coordinates (no signal, no Wi-Fi positioning).',
+          3: 'Request timed out after 15 seconds.'
+        };
+        console.warn('[Locate] Geolocation error:', err.code, err.message);
+        locateStatus.innerHTML = `⚠ <strong>GPS failed:</strong> ${msgs[err.code] || err.message}<br>Trying IP fallback...`;
+        tryIPFallback();
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+
+  // Manual location override (paste into browser console: setManualLocation(13.0827, 80.2707))
+  window.setManualLocation = (lat, lng) => setLocation(lat, lng, null, 'manual entry');
+
+  // ===== Theme toggle =====
+  const themeBtn = document.getElementById('theme-toggle');
+  themeBtn.addEventListener('click', () => {
+    const next = currentTheme === 'dark' ? 'light' : 'dark';
+    document.body.setAttribute('data-theme', next);
+    map.removeLayer(tileLayers[currentTheme]);
+    tileLayers[next].addTo(map);
+    themeBtn.textContent = next === 'dark' ? '🌙' : '☀️';
+    currentTheme = next;
+  });
+</script>
+</body>
+</html>
